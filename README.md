@@ -1,10 +1,10 @@
 # IVT695reader
-Use an ESP8266 with ESPHome to read and control an IVT695 Twin geothermal heat pump
+## Use an ESP8266 with ESPHome to read and control an IVT695 Twin geothermal heat pump
 
 ![image alt](https://github.com/skracke/IVT695reader/blob/main/IMG_1114.HEIC_compressed.JPEG?raw=true)
 ![image alt](https://github.com/skracke/IVT695reader/blob/main/IMG_1115.HEIC_compressed.JPEG?raw=true)
 
-
+```
 TX - RX on diagnostic port on Rego 455 board
 RX - TX on diagnostic port on Rego 455 board
 D1 - Left pin on rotary encoder
@@ -20,3 +20,4 @@ D6 - 0.47k resistor - Additional hot water LED
 D7 - 0.47k resistor - Electric heater LED
 G  - (GND) Middle pin on rotary encoder
 5V - See red wire on image
+```
