@@ -10,9 +10,21 @@ esphome:
   project:
     name: iv695.esp-ivt695reader-component
     version: "1.0"
+  on_boot:
+    - priority: 0
+      then:
+        - sensor.template.publish:
+            id: remaining_time_hot_water
+            state: 0
+        - lambda: |-
+            id(remaining_seconds) = 0;
 
 esp8266:
   board: d1_mini
+
+globals:
+  - id: remaining_seconds
+    type: int
 
 external_components:
   - source:
@@ -35,7 +47,6 @@ captive_portal:
 logger:
   level: INFO
   baud_rate: 0 # disable logging over uart (would use up a HW uart)
-#  esp8266_store_log_strings_in_flash: false # Avoid flash wear and tear. Defaults to true.
 
 api:
   encryption:
@@ -57,6 +68,13 @@ ivt695reader:
     uart_id: uart_bus
 
 sensor:
+  - platform: template
+    name: "Återstående tid extra varmvatten"
+    id: remaining_time_hot_water
+    unit_of_measurement: "min"
+    update_interval: 60s
+    accuracy_decimals: 0
+
   - platform: wifi_signal # Reports the WiFi signal strength/RSSI in dB
     name: "WiFi signal dB"
     id: wifi_signal_db
@@ -262,7 +280,7 @@ binary_sensor:
       name: "External P2"
 
 
-  # Original alarm LED configuration
+  # Alarm LED
   - platform: gpio
     id: alarm_led
     pin:
@@ -300,7 +318,7 @@ binary_sensor:
         return false;
       }
 
-  # Original shower LED configuration
+  # Shower LED
   - platform: gpio
     id: shower_led
     pin:
@@ -338,7 +356,7 @@ binary_sensor:
         return false;
       }
 
-  # Original electric water heater
+  # Electric water heater LED
   - platform: gpio
     name: "Electric water heater"
     pin:
@@ -389,23 +407,18 @@ output:
 
 script:  
   - id: additional_hot_water
-    parameters: 
+    parameters:
       AddIfTrueRemoveIfFalse: bool
       HoursToAddOrRemove: int
     mode: queued
     max_runs: 1
     then:
-      - script.execute: rotate_left
-      - delay: 1s
-      - script.execute: right_button_press
+      - script.execute: left_button_press
       - delay: 1s
       - script.execute: rotate_right
       - delay: 1s
-      - repeat:
-          count: 3
-          then:
-            - script.execute: right_button_press
-            - delay: 1s
+      - script.execute: right_button_press
+      - delay: 1s
       - if:
           condition:
             lambda: 'return AddIfTrueRemoveIfFalse;'
@@ -423,12 +436,41 @@ script:
                   - delay: 0.2s
       - delay: 1s
       - script.execute: right_button_press
-      - delay: 3s
-      - repeat:
-          count: 3
+      - if:
+          condition:
+            lambda: 'return AddIfTrueRemoveIfFalse;'
           then:
-            - script.execute: left_button_press
-            - delay: 1s
+            - lambda: |-
+                // Include cmath för ceil()
+                #include <cmath>
+                int current_seconds = id(remaining_seconds);
+                int hours_to_add_in_seconds = HoursToAddOrRemove * 3600;
+                int max_seconds = 48 * 3600;
+
+                int new_total_seconds;
+                if (current_seconds > 0) {
+                  new_total_seconds = current_seconds + hours_to_add_in_seconds;
+                } else {
+                  new_total_seconds = hours_to_add_in_seconds;
+                }
+                
+                int new_seconds = ceil((float)new_total_seconds / 3600.0) * 3600;
+
+                // Make sure the timer does not go past 48 hours
+                if (new_seconds > max_seconds) {
+                    new_seconds = max_seconds;
+                }
+                
+                id(remaining_seconds) = new_seconds; // Uppdatera den interna sekundräknaren
+                id(remaining_time_hot_water).publish_state(new_seconds / 60); // Publicera i hela minuter till HA
+          else:
+            - lambda: |-
+                id(remaining_seconds) = 0;
+            - sensor.template.publish:
+                id: remaining_time_hot_water
+                state: 0
+      - delay: 3s
+      - script.execute: left_button_press
 
   - id: turn_off_all
     mode: single
@@ -493,7 +535,7 @@ button:
         - script.execute:
             id: additional_hot_water
             AddIfTrueRemoveIfFalse: false
-            HoursToAddOrRemove: 10
+            HoursToAddOrRemove: 48
 
   - platform: template
     id: script_left_button_press
@@ -529,3 +571,16 @@ button:
     on_press: 
       then:
         - script.execute: turn_off_all
+
+interval:
+  - interval: 1s
+    then:
+      - lambda: |-
+          int current_minutes = id(remaining_time_hot_water).state;
+          if (id(remaining_seconds) > 0) {
+            id(remaining_seconds)--;
+            int new_minutes = id(remaining_seconds) / 60;
+            if (id(remaining_seconds) % 60 == 0) {
+              id(remaining_time_hot_water).publish_state(new_minutes);
+            }
+          }
